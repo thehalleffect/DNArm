@@ -18,19 +18,22 @@
   fprintf (stderr, "\n"); \
 }
 
-int
-main (void)
+int gpu_cgm(uint32_t* aList, uint32_t* bList, uint32_t* cList, int aLength, int bLength, int cLength, int keyLength, uint32_t** matches)
 {
+  int gap = 0, myoffset = 0;
   cl_platform_id *platforms;
   cl_uint num_platforms = 0;
   cl_device_id *devices;
   cl_uint num_devices = 0;
   cl_context context;
   cl_command_queue command_queue;
-  cl_mem dev_buf;
+  cl_mem a_buf;
+  cl_mem b_buf;
+  cl_mem c_buf;
+  cl_mem res_buf;
   cl_program program;
   cl_kernel kernel;
-  cl_uint *hst_buf = malloc (4096);
+  cl_uint *results;
   FILE *prgm_fptr;
   struct stat prgm_sbuf;
   char *prgm_data;
@@ -41,6 +44,14 @@ main (void)
 
   cl_int ret;
   cl_uint i;
+
+  int resultLength;
+  if(cLength == 0)
+	  resultLength = aLength;
+  else
+	  resultLength = 2*aLength + bLength;
+	  
+  results = malloc(sizeof(cl_uint)*resultLength);
 
   /* figure out how many CL platforms are available */
   ret = clGetPlatformIDs (0, NULL, &num_platforms);
@@ -124,24 +135,71 @@ main (void)
       exit (EXIT_FAILURE);
     }
 
-  /* create a buffer on the CL device */
-  dev_buf = clCreateBuffer (context, CL_MEM_READ_WRITE,
-                            sizeof (cl_uint) * BUF_SIZE, NULL, &ret);
-  if (NULL == dev_buf || CL_SUCCESS != ret)
+  /* create buffers on the CL device */
+  a_buf = clCreateBuffer (context, CL_MEM_READ_WRITE,
+                            sizeof (cl_uint) * aLength, NULL, &ret);
+  if (NULL == a_buf || CL_SUCCESS != ret)
     {
-      print_error ("Failed to create buffer: %d", ret);
+      print_error ("Failed to create a buffer: %d", ret);
       exit (EXIT_FAILURE);
     }
 
+  b_buf = clCreateBuffer (context, CL_MEM_READ_WRITE,
+                            sizeof (cl_uint) * bLength, NULL, &ret);
+  if (NULL == b_buf || CL_SUCCESS != ret)
+    {
+      print_error ("Failed to create b buffer: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
+  if(cLength != 0){
+	  c_buf = clCreateBuffer (context, CL_MEM_READ_WRITE,
+								sizeof (cl_uint) * cLength, NULL, &ret);
+	  if (NULL == c_buf || CL_SUCCESS != ret)
+		{
+		  print_error ("Failed to create c buffer: %d", ret);
+		  exit (EXIT_FAILURE);
+		}
+
+  }
+
+  int res_bufSize = aLength;
+  if(cLength != 0 && bLength > aLength)
+	  res_bufSize = bLength;
+  if(cLength > res_bufSize)
+	  res_bufSize = cLength;
+ 
+  
+  res_buf = clCreateBuffer (context, CL_MEM_READ_WRITE,
+                            sizeof (cl_uint) * res_bufSize, NULL, &ret);
+  if (NULL == res_buf || CL_SUCCESS != ret)
+    {
+      print_error ("Failed to create b buffer: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
+  /* write data to these buffers */
+	clEnqueueWriteBuffer(command_queue, a_buf, CL_FALSE, 
+								0, aLength*sizeof(uint32_t), (void*) aList,
+								0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, b_buf, CL_FALSE, 
+								0, bLength*sizeof(uint32_t), (void*) bList,
+								0, NULL, NULL);
+	if(cLength != 0){
+		clEnqueueWriteBuffer(command_queue, c_buf, CL_FALSE, 
+									0, cLength*sizeof(uint32_t), (void*) cList,
+									0, NULL, NULL);
+	}
+
   /* read the opencl program code into a string */
-  prgm_fptr = fopen ("samplecl.cl", "r");
+  prgm_fptr = fopen ("cgmcl.cl", "r");
   if (NULL == prgm_fptr)
     {
       print_error ("%s", strerror (errno));
       exit (EXIT_FAILURE);
     }
 
-  if (0 != stat ("samplecl.cl", &prgm_sbuf))
+  if (0 != stat ("cgmcl.cl", &prgm_sbuf))
     {
       print_error ("%s", strerror (errno));
       exit (EXIT_FAILURE);
@@ -155,7 +213,7 @@ main (void)
       exit (EXIT_FAILURE);
     }
 
-  /* make suer all data is read from the file (just in case fread returns
+  /* make sure all data is read from the file (just in case fread returns
    * short) */
   offset = 0;
   while (prgm_size - offset
@@ -204,20 +262,74 @@ main (void)
     }
 
   /* pull out a reference to your kernel */
-  kernel = clCreateKernel (program, "samplecl_kernel", &ret);
+  kernel = clCreateKernel (program, "cgm_kernel", &ret);
   if (NULL == kernel || CL_SUCCESS != ret)
     {
       print_error ("Failed to create kernel: %d", ret);
       exit (EXIT_FAILURE);
     }
 
-  /* set your kernel's arguments (this kernel only has one argument) */
-  ret = clSetKernelArg (kernel, 0, sizeof(cl_mem), &dev_buf);
+  /* set your kernel's arguments */
+  ret = clSetKernelArg (kernel, 0, sizeof(cl_mem), &a_buf);
   if (CL_SUCCESS != ret)
     {
       print_error ("Failed to set kernel argument: %d", ret);
       exit (EXIT_FAILURE);
     }
+    ret = clSetKernelArg (kernel, 1, sizeof(cl_mem), &b_buf);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
+    ret = clSetKernelArg (kernel, 2, sizeof(int), &aLength);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+    ret = clSetKernelArg (kernel, 3, sizeof(int), &bLength);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
+   ret = clSetKernelArg (kernel, 4, sizeof(int), &gap);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+    ret = clSetKernelArg (kernel, 5, sizeof(int), &myoffset);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+  
+  ret = clSetKernelArg (kernel, 6, sizeof(int), &keyLength);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+    ret = clSetKernelArg (kernel, 7, sizeof(cl_mem), &res_buf);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to set kernel argument: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
+  /* make sure buffers have been written before executing */
+  ret = clEnqueueBarrier (command_queue);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to enqueue barrier: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
 
   /* enque this kernel for execution... */
   ret = clEnqueueNDRangeKernel (command_queue, kernel, 2, NULL,
@@ -238,8 +350,8 @@ main (void)
     }
 
   /* copy the contents of dev_buf from the CL device to the host (CPU) */
-  ret = clEnqueueReadBuffer (command_queue, dev_buf, true, 0,
-                             sizeof (cl_uint) * BUF_SIZE, hst_buf, 0, NULL,
+  ret = clEnqueueReadBuffer (command_queue, res_buf, true, 0,
+                             sizeof (cl_uint) * aLength, results, 0, NULL,
                              NULL);
   if (CL_SUCCESS != ret)
     {
@@ -255,9 +367,8 @@ main (void)
     }
 
   /* make sure the content of the buffer are what we expect */
-  for (i = 0; i < BUF_SIZE; i++)
-    if (i != hst_buf[i])
-      print_error ("(i,hst_buf[i]) = (%d,%u)", i, hst_buf[i]);
+  for (i = 0; i < aLength; i++)
+    printf("%d\n", results[i]);
 
   /* free up resources */
   ret = clReleaseKernel (kernel);
@@ -274,12 +385,37 @@ main (void)
       exit (EXIT_FAILURE);
     }
 
-  ret = clReleaseMemObject (dev_buf);
+    ret = clReleaseMemObject (a_buf);
   if (CL_SUCCESS != ret)
     {
       print_error ("Failed to release memory object: %d", ret);
       exit (EXIT_FAILURE);
     }
+    ret = clReleaseMemObject (b_buf);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to release memory object: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+  
+
+  if(cLength != 0){
+	ret = clReleaseMemObject (c_buf);
+	if (CL_SUCCESS != ret)
+	{
+		print_error ("Failed to release memory object: %d", ret);
+		exit (EXIT_FAILURE);
+	}
+  }
+ 
+  
+  ret = clReleaseMemObject (res_buf);
+  if (CL_SUCCESS != ret)
+    {
+      print_error ("Failed to release memory object: %d", ret);
+      exit (EXIT_FAILURE);
+    }
+
 
   if (CL_SUCCESS != (ret = clReleaseCommandQueue (command_queue)))
     {
@@ -294,4 +430,15 @@ main (void)
     }
 
   exit (EXIT_SUCCESS);
+}
+
+int main()
+{
+	uint32_t aList[5] = {3, 12, 15, 23, 53};
+	uint32_t bList[4] = {11, 14, 31, 50};
+	uint32_t cList[3] = {4, 28, 39};
+	uint32_t* matches;
+
+	gpu_cgm(&aList[0], &bList[0], &cList[0], 5, 4, 3, 8,  &matches);
+
 }

@@ -323,7 +323,7 @@ void delDetect(mData * returnData, uint32_t * diffSeq, uint32_t * rdSeq, int rdL
 //--mllLen is the number of possible match locations.
 //--rdSeq is the read sequence. 
 //--listLen is the length of the reference genome.
-mData * fgm(uint32_t * list, uint32_t listLen, int readLen, uint32_t * matchLocLst, int mllLen, uint32_t * rdSeq)
+void fgm(mData * returnData, uint32_t * list, uint32_t listLen, int readLen, uint32_t * matchLocLst, int mllLen, uint32_t * rdSeq)
 {	
 	int start;	//matchloclst is in nucleotides, correct into bits.
 	int len = readLen>>4; //readlen is in nucleotides, correct into uint32_t sizing.
@@ -354,8 +354,8 @@ mData * fgm(uint32_t * list, uint32_t listLen, int readLen, uint32_t * matchLocL
 	int ins, del; //flag for detecting insertion or deletion
 	int mCount;
 	
-	mData * returnData;
-
+//	mData * returnData;
+printf("%x %x %x %x %x %x %x %x %x %x\n", list[0],list[1],list[2],list[3],list[4],list[5],list[6],list[7],list[8],list[9],list[10]);
 	//for each location in matchlist
 	for(i = 0; i < mllLen; i++)
 	{
@@ -439,7 +439,8 @@ mData * fgm(uint32_t * list, uint32_t listLen, int readLen, uint32_t * matchLocL
 
 		if(min < THRESHOLD && minIdx == 3)	//if the non-skewed reference sequence is a very good match...
 		{
-			returnData = malloc(sizeof(mData)); //allocate our return data.
+
+//			returnData = malloc(sizeof(mData)); //allocate our return data.
 //			returnData -> mods = malloc(compCount[3] * sizeof(char));	//allocate space for the modification data tracking
 //			returnData -> locs = malloc(compCount[3] * sizeof(unsigned int));	//allocate space for modification location tracking
 			returnData -> len = compCount[3];	//store the length of the mutation index for this read.
@@ -497,7 +498,7 @@ mData * fgm(uint32_t * list, uint32_t listLen, int readLen, uint32_t * matchLocL
 		
 		//the indelLoc must be added to the start position to obtain the absolute location of the indel, relative to the absolute beginning of the REFERENCE GENOME. 
 		//
-		returnData = malloc(sizeof(mData)); //allocate our return data.
+//		returnData = malloc(sizeof(mData)); //allocate our return data.
 //		returnData -> mods = malloc(16 * sizeof(char));	//allocate space for the modification data tracking
 //		returnData -> locs = malloc(16 * sizeof(unsigned int));	//allocate space for modification location tracking
 //		returnData -> ins = malloc(16 * sizeof(int));	//keep track if this is an insertion or not
@@ -514,7 +515,9 @@ mData * fgm(uint32_t * list, uint32_t listLen, int readLen, uint32_t * matchLocL
 		return returnData;		
 		
 	}	//the end of calculation for one match possibility
-	return NULL;	//if we're here, we had no luck. oh well.
+	returnData->len = -1;	
+	return;
+//	return NULL;	//if we're here, we had no luck. oh well.
 }
 //
 //it should be noted that all positions returned will be relative to the beginning of the REFERENCE genome!!!
